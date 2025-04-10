@@ -1,0 +1,276 @@
+#include "Arduino.h"
+#include "Adafruit_VL53L0X.h"
+#include <Wire.h>
+#include <Servo.h>
+#include <MsTimer2.h>
+
+Adafruit_VL53L0X lox = Adafruit_VL53L0X();
+
+Servo myservo;
+
+#define motor_a_pin   5 //PWM  1 4 2
+#define motor_b_pin   4     // 2 5 1
+#define motor_c_pin   6 //PWM  3 7 4
+#define motor_d_pin   7     // 4 6 3
+ 
+#define TrigPin 2
+#define EchoPin 3
+
+#define led 2     //定义数字IO 2的名字为led
+
+float Value_cm;
+int pos = 0;
+
+int zt = 1;
+
+int motorpwm = 146;  //126
+
+float discsb;
+unsigned int disjg; 
+  
+float discsbsz[9];
+int i,j,n=0;
+int k = 20;
+
+
+float afstandCM()
+{
+  digitalWrite(TrigPin, LOW); //低高低电平发一个短时间脉冲去TrigPin
+  delayMicroseconds(2);
+  digitalWrite(TrigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TrigPin, LOW);
+  Value_cm = float( pulseIn(EchoPin, HIGH) * 17 )/1000; //将回波时间换算成cm
+  //读取一个引脚的脉冲（HIGH或LOW）
+  //返回脉冲的长度，单位微秒。如果在指定的时间内无脉冲函数返回。
+  //此函数的计时功能由经验决定，长时间的脉冲计时可能会出错。计时范围从10微秒至3分钟。（1秒=1000毫秒=1000000微秒）
+  //接收到的高电平的时间（us）* 340m/s / 2 = 接收到高电平的时间（us） * 17000 cm / 1000000 us = 接收到高电平的时间 * 17 / 1000  (cm)
+  
+  Serial.print(Value_cm);
+  Serial.println("cm");
+  delay(30);
+  
+  return Value_cm;  
+}
+
+unsigned int distanceMM() {
+  VL53L0X_RangingMeasurementData_t measure;
+    
+  Serial.print("Reading a measurement... ");
+  lox.rangingTest(&measure, false); // pass in 'true' to get debug data printout!
+
+  if (measure.RangeStatus != 4) {  // phase failures have incorrect data
+    Serial.print("Distance (mm): "); Serial.println(measure.RangeMilliMeter);
+  } else {
+    Serial.println(" out of range ");
+    measure.RangeMilliMeter = 400;
+  }
+  //delay(100);
+  return measure.RangeMilliMeter;
+}
+void flash() {
+  static boolean output =HIGH;
+  n++;
+  }
+void setup() {
+  MsTimer2::set(500,flash);
+  MsTimer2::start();
+  Serial.begin(115200);
+  // wait until serial port opens for native USB devices
+  while (! Serial) {
+    delay(1);
+  }  
+  Serial.println("Adafruit VL53L0X test");
+  if (!lox.begin()) {
+    Serial.println(F("Failed to boot VL53L0X"));
+    while(1);
+  }
+  // power 
+  Serial.println(F("VL53L0X API Simple Ranging example\n\n")); 
+
+  myservo.attach(9);
+
+  pinMode(TrigPin, OUTPUT);
+  pinMode(EchoPin, INPUT);
+  pinMode(motor_a_pin, OUTPUT); //设置引脚为输出模式
+  pinMode(motor_b_pin, OUTPUT); //设置引脚为输出模式
+  pinMode(motor_c_pin, OUTPUT); //设置引脚为输出模式
+  pinMode(motor_d_pin, OUTPUT); //设置引脚为输出模式
+  pinMode(led,OUTPUT);    //定义led引脚为输出模式
+  digitalWrite(led,0);
+  digitalWrite(motor_a_pin,0);
+  digitalWrite(motor_b_pin,0);
+  digitalWrite(motor_c_pin,0);
+  digitalWrite(motor_d_pin,0);  
+}
+
+//前进
+void Car_ForwardRun() {
+  Serial.print("前进\r\n"); 
+  analogWrite(motor_a_pin,motorpwm - 29); //左轮 右轮 motorpwm - 29
+  digitalWrite(motor_b_pin,0);
+  analogWrite(motor_c_pin,motorpwm + 9); //右轮 左轮  motorpwm + 6
+  digitalWrite(motor_d_pin,0);
+}
+
+//后退
+void Car_BackwardRun() {
+  Serial.print("后退\r\n");
+  analogWrite(motor_a_pin,motorpwm + 20);
+  digitalWrite(motor_b_pin,1);
+  analogWrite(motor_c_pin,motorpwm);
+  digitalWrite(motor_d_pin,1); 
+}
+
+//右转
+void Car_RightRun() {
+  Serial.print("右转\r\n");
+  analogWrite(motor_a_pin,motorpwm - 28); 
+  digitalWrite(motor_b_pin,0);
+  analogWrite(motor_c_pin,motorpwm + 35);
+  digitalWrite(motor_d_pin,0); 
+}
+
+//左转
+void Car_LeftRun() {
+  Serial.print("左转\r\n");
+  analogWrite(motor_a_pin,motorpwm + 10);
+  digitalWrite(motor_b_pin,0);
+  analogWrite(motor_c_pin,motorpwm + 10);
+  digitalWrite(motor_d_pin,0); 
+}
+
+//停止
+void Car_StopRun() {
+  Serial.print("停止\r\n");
+  digitalWrite(motor_a_pin,0);
+  digitalWrite(motor_b_pin,0);
+  digitalWrite(motor_c_pin,0);
+  digitalWrite(motor_d_pin,0); 
+}
+
+//旋转
+void Car_XjbRun() {
+  Serial.print("旋转\r\n");
+  digitalWrite(motor_a_pin,1);
+  digitalWrite(motor_b_pin,0);
+  digitalWrite(motor_c_pin,0);
+  digitalWrite(motor_d_pin,0);
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  Car_StopRun();
+  delay(3000);
+  distanceMM();
+  distanceMM(); //初始化停车后先读两次激光数据
+  myservo.write(180); //左偏
+  for(i = 0;i<9;i++) {
+    discsbsz[i] = afstandCM();
+  }
+  for(i = 0;i<8;i++) {
+    for(j=0 ;j<8-i;j++) {
+      if(discsbsz[j]>discsbsz[j+1]) {
+        discsb = discsbsz[j];
+        discsbsz[j] = discsbsz[j+1];
+        discsbsz[j+1] = discsb;
+      }  
+    }
+  }
+  discsb = discsbsz[4];  //通过九次取值让超声波模块首先取值稳定
+  while(1) {  
+    while(zt == 1) {  //该状态下小车仅可左转
+      disjg = distanceMM();  //读一次激光判断前方是否有障碍物
+      if(disjg >= 300) {
+        discsb = afstandCM();
+        if((discsb == 60.0) ) {   //50
+          Car_ForwardRun();
+        }
+       
+        else if((discsb < 60.0) ) {   //50
+          Car_RightRun();
+        }
+        else if((discsb > 60.0) && (discsb < 500.0) ) {   //n < 50
+          Car_LeftRun();
+        } 
+        else if((discsb > 60.0) && (n < 270)) {   //270
+          Car_LeftRun();
+        }
+        else if((n >= 270 && n < 350) && (discsb >= 500.0)) {   //270 350
+                                                                      
+          //myservo.write(180); 
+          /*Car_StopRun();
+          delay(25);*/
+          Car_RightRun();
+          delay(250);
+          Car_StopRun();
+          delay(25);
+
+          for(i = 0;i<9;i++) {
+            discsbsz[i] = afstandCM();
+          }
+          for(i = 0;i<8;i++) {
+            for(j=0 ;j<8-i;j++) {
+              if(discsbsz[j]>discsbsz[j+1]) {
+                discsb = discsbsz[j];
+                discsbsz[j] = discsbsz[j+1];
+                discsbsz[j+1] = discsb;
+              }  
+            }
+          }
+          discsb = discsbsz[4];
+          if(discsb >= 500.0) {
+            Car_ForwardRun();
+            delay(6000);
+            zt = 2; 
+          }
+          //myservo.write(180);
+          //Car_XjbRun(); 
+        }
+         
+      }
+      if(disjg < 350) {
+        Car_BackwardRun();
+        delay(2000);
+        Car_RightRun();
+        delay(1500);
+      }        
+    }
+    myservo.write(0); //右偏
+    /*while(discsb >= 75.0)  {
+      discsb = afstandCM();
+      Car_RightRun();
+      delay(800);   
+    }
+    while(discsb <= 75.0) {
+      discsb = afstandCM();
+      Car_LeftRun();
+      delay(1000);   
+    }*/
+    while(zt == 2) {
+      disjg = distanceMM();
+      if(disjg >= 300) {
+        discsb = afstandCM();
+        if((discsb >= 60.0)&&(discsb <= 62)) {
+          Car_ForwardRun();
+        }
+        else if((discsb > 62.0)&& (discsb < 500.0)) {
+          Car_RightRun();
+        }
+        else if(discsb < 60.0) {
+          
+          Car_LeftRun();
+        }
+        else if((discsb > 62.0) && (n >= 350 )) {   //360
+          Car_RightRun();
+        }
+      }
+      if(disjg < 400) {
+        Car_BackwardRun();
+        delay(2300);
+        Car_LeftRun();
+        delay(1500);
+      }        
+    }
+  }
+}
